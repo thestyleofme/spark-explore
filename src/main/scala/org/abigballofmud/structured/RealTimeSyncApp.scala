@@ -76,7 +76,7 @@ object RealTimeSyncApp {
 
     StructType(payloadSchema_o)
     val nestTimestampFormat = "yyyy-MM-dd'T'HH:mm:ss.sss'Z'"
-    val ds = df.select(
+    val query = df.select(
       functions.from_json(functions.col("value").cast("string"), payloadSchema_o).alias("event"),
       functions.col("timestamp").cast("string").alias("ts"))
       .filter($"event.payload.op".===("c"))
@@ -131,7 +131,7 @@ object RealTimeSyncApp {
     //      })
     //      .start()
 
-    ds.awaitTermination()
+    query.awaitTermination()
 
   }
 
