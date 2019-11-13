@@ -31,8 +31,10 @@ object CrushFile {
     //    }
     //    val Array(dfsUri, fromDir, tmpDir) = args
     //    val dfsUri = "hdfs://hdsp001:8020"
-    val fromDir = "hdfs://hdsp001:8020/warehouse/tablespace/spark/book_parquet"
-    val tmpDir = "hdfs://hdsp001:8020/warehouse/tablespace/spark/book_parquet_temp"
+//    val fromDir = "hdfs://hdsp001:8020/warehouse/tablespace/spark/book_parquet"
+//    val tmpDir = "hdfs://hdsp001:8020/warehouse/tablespace/spark/book_parquet_temp"
+    val fromDir = "hdfs://hdsp001:8020/warehouse/tablespace/spark/userinfo_parquet"
+    val tmpDir = "hdfs://hdsp001:8020/warehouse/tablespace/spark/userinfo_parquet_temp"
 
     val conf: SparkConf = new SparkConf()
       .setMaster("local[2]")
@@ -48,7 +50,8 @@ object CrushFile {
     val sparkSession: SparkSession = getOrCreateSparkSession(conf)
     val sc: SparkContext = sparkSession.sparkContext
     val fs: FileSystem = FileSystem.get(sc.hadoopConfiguration)
-    val df: DataFrame = sparkSession.table("test.book_parquet")
+//    val df: DataFrame = sparkSession.table("test.book_parquet")
+    val df: DataFrame = sparkSession.table("test.userinfo_parquet")
     df.repartition(takePartition(fromDir, fs))
       .write
       .format("parquet")
