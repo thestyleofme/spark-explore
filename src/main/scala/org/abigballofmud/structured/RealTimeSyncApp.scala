@@ -3,9 +3,9 @@ package org.abigballofmud.structured
 import java.util.concurrent.TimeUnit
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.streaming.Trigger
+import org.apache.spark.sql.streaming.{StreamingQuery, Trigger}
 import org.apache.spark.sql.types.{StringType, StructType}
-import org.apache.spark.sql.{DataFrame, ForeachWriter, Row, SparkSession, functions}
+import org.apache.spark.sql.{DataFrame, SparkSession, functions}
 
 /**
  * <p>
@@ -26,7 +26,7 @@ object RealTimeSyncApp {
     // Spark默认将用户程序运行所在系统的当前登录用户作为用户程序的关联用户
     System.setProperty("user.name", "hive")
 
-    val conf = new SparkConf().
+    val conf: SparkConf = new SparkConf().
       setMaster("local[2]").
       setAppName("test_structured_streaming")
     // 加这个配置访问集群中的hive
@@ -36,9 +36,9 @@ object RealTimeSyncApp {
     //      .set("hive.metastore.uris", "thrift://hdsp001:9083")
 
     // 创建StreamingSession
-    val spark = getOrCreateSparkSession(conf)
+    val spark: SparkSession = getOrCreateSparkSession(conf)
     import spark.implicits._
-    val df = spark
+    val df: DataFrame = spark
       .readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", "docker02:9092")
@@ -60,7 +60,7 @@ object RealTimeSyncApp {
     //
     //    ds.awaitTermination()
 
-    val payloadSchema_o = new StructType()
+    val payloadSchema_o: StructType = new StructType()
       .add("payload",
         new StructType().add("op", StringType)
           .add("before", StringType, nullable = false)
@@ -76,7 +76,7 @@ object RealTimeSyncApp {
 
     StructType(payloadSchema_o)
     val nestTimestampFormat = "yyyy-MM-dd'T'HH:mm:ss.sss'Z'"
-    val query = df.select(
+    val query: StreamingQuery = df.select(
       functions.from_json(functions.col("value").cast("string"), payloadSchema_o).alias("event"),
       functions.col("timestamp").cast("string").alias("ts"))
       .filter($"event.payload.op".===("c"))
@@ -141,7 +141,7 @@ object RealTimeSyncApp {
    * @return SparkSession
    */
   def getOrCreateSparkSession(conf: SparkConf): SparkSession = {
-    val spark = SparkSession
+    val spark: SparkSession = SparkSession
       .builder()
       .config(conf)
       .enableHiveSupport()

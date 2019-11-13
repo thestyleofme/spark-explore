@@ -1,5 +1,6 @@
 package org.abigballofmud.streaming.handler
 
+import java.lang.reflect.Type
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, LocalDateTime, ZoneId}
 
@@ -11,12 +12,13 @@ import org.abigballofmud.streaming.redis.InternalRedisClient
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.StringDeserializer
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.{SaveMode, SparkSession}
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.apache.spark.streaming.dstream.InputDStream
 import org.apache.spark.streaming.kafka010._
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import org.slf4j.LoggerFactory
+import redis.clients.jedis.{Jedis, Pipeline}
 
 import scala.collection.mutable
 
@@ -45,7 +47,7 @@ object HandlerApp {
     // kafka
     //    val brokers: String = "hdsp001:6667,hdsp002:6667,hdsp003:6667"
     val brokers: String = "poc1:9093,poc2:9093,poc3:9093"
-    val kafkaParams = Map[String, Object](
+    val kafkaParams: Map[String, Object] = Map[String, Object](
       "bootstrap.servers" -> brokers,
       "key.deserializer" -> classOf[StringDeserializer],
       "value.deserializer" -> classOf[StringDeserializer],
@@ -55,7 +57,7 @@ object HandlerApp {
     )
     //    val topicPartitions = Map[String, Int]("vin-source" -> 3)
     //    val topicPartitions = Map[String, Int]("uaes-super-knock-poc" -> 1)
-    val topicPartitions = Map[String, Int]("GW-GWM-uaes-topic" -> 1)
+    val topicPartitions: Map[String, Int] = Map[String, Int]("GW-GWM-uaes-topic" -> 1)
 
     // redis
     val redisHost: String = "hdsp004"
@@ -64,7 +66,7 @@ object HandlerApp {
 
     // 创建redis
     InternalRedisClient.makePool(redisHost, redisPort, redisPassword)
-    val conf = new SparkConf()
+    val conf: SparkConf = new SparkConf()
       .setMaster("local[2]")
       .setAppName("poc_streaming_test")
       // 加这个配置访问集群中的hive
@@ -84,13 +86,13 @@ object HandlerApp {
       .set("spark.sql.autoBroadcastJoinThreshold", "20971520")
 
     // 创建StreamingSession
-    val sparkSession = getOrCreateSparkSession(conf)
-    val sc = sparkSession.sparkContext
+    val sparkSession: SparkSession = getOrCreateSparkSession(conf)
+    val sc: SparkContext = sparkSession.sparkContext
     // 创建StreamingContext
     val ssc = new StreamingContext(sc, Seconds(30))
 
     // 创建kafka流
-    val kafkaStream = createKafkaStream(ssc, topicPartitions, kafkaParams)
+    val kafkaStream: InputDStream[ConsumerRecord[String, String]] = createKafkaStream(ssc, topicPartitions, kafkaParams)
     // 开始消费，业务逻辑
     handler(kafkaStream, sparkSession)
     // 启动并等待
@@ -105,20 +107,20 @@ object HandlerApp {
   def handler(stream: InputDStream[ConsumerRecord[String, String]], sparkSession: SparkSession): Unit = {
     stream.foreachRDD { rdd =>
       // 获取offset信息
-      val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+      val offsetRanges: Array[OffsetRange] = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
 
       // 计算相关指标，这里就统计下条数了
-      val total = rdd.count()
+      val total: Long = rdd.count()
 
       // 写入Hive表，指定压缩格式。发现可以自动创建表
       import sparkSession.implicits._
       //      val df = rdd.map(_.value()).map(o => gson.fromJson(o, classOf[VinSourceData])).toDF()
-      val df = rdd.mapPartitions(x => {
+      val df: DataFrame = rdd.mapPartitions(x => {
         x.map(_.value())
           .filter(str => str.contains("event.suprKnkSrv") || str.contains("gps.") || str.contains("rolling."))
           .map(o => {
             try {
-              val typeToken = new TypeToken[java.util.Map[String, String]]() {}.getType
+              val typeToken: Type = new TypeToken[java.util.Map[String, String]]() {}.getType
               val m: java.util.Map[String, String] = gson.fromJson(o, typeToken)
               // gson.fromJson(o, classOf[VinSourceData])
               //  val m = JSONObject.fromObject(o)
@@ -132,7 +134,7 @@ object HandlerApp {
               data.rc = m.getOrDefault("rc", null)
               data.ts_time = LocalDateTime.ofInstant(Instant.ofEpochMilli(m.get("ts").substring(0, 13).toLong), ZoneId.of("Asia/Shanghai"))
                 .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-              val eventType = data.st.toString.split("\\.")
+              val eventType: Array[String] = data.st.toString.split("\\.")
               if (eventType.isEmpty) {
                 data.sts = data.st
               } else {
@@ -168,8 +170,8 @@ object HandlerApp {
         df.write.mode(SaveMode.Append).format("hive").saveAsTable("poc_uaes.stg_vin_source_data4")
       }
 
-      val jedis = InternalRedisClient.getResource
-      val pipeline = jedis.pipelined()
+      val jedis: Jedis = InternalRedisClient.getResource
+      val pipeline: Pipeline = jedis.pipelined()
       // 会阻塞redis
       pipeline.multi()
 
@@ -182,7 +184,7 @@ object HandlerApp {
           offsetRange.topic,
           offsetRange.partition,
           offsetRange.untilOffset)
-        val topicPartitionKey = "poc_" + offsetRange.topic + ":" + offsetRange.partition
+        val topicPartitionKey: String = "poc_" + offsetRange.topic + ":" + offsetRange.partition
         pipeline.set(topicPartitionKey, offsetRange.untilOffset + "")
       }
 
@@ -200,7 +202,7 @@ object HandlerApp {
    * @return SparkSession
    */
   def getOrCreateSparkSession(conf: SparkConf): SparkSession = {
-    val spark = SparkSession
+    val spark: SparkSession = SparkSession
       .builder()
       .config(conf)
       .enableHiveSupport()
@@ -217,10 +219,10 @@ object HandlerApp {
   def createKafkaStream(ssc: StreamingContext,
                         topicPartitions: Map[String, Int],
                         kafkaParams: Map[String, Object]): InputDStream[ConsumerRecord[String, String]] = {
-    val offsets = getOffsets(topicPartitions)
+    val offsets: Map[TopicPartition, Long] = getOffsets(topicPartitions)
 
     // 创建kafka stream
-    val stream = KafkaUtils.createDirectStream[String, String](
+    val stream: InputDStream[ConsumerRecord[String, String]] = KafkaUtils.createDirectStream[String, String](
       ssc,
       LocationStrategies.PreferConsistent,
       ConsumerStrategies.Assign[String, String](offsets.keys.toList, kafkaParams, offsets)
@@ -234,19 +236,19 @@ object HandlerApp {
    * @return Map[TopicPartition, Long]
    */
   def getOffsets(topicPartitions: Map[String, Int]): Map[TopicPartition, Long] = {
-    val jedis = InternalRedisClient.getResource
+    val jedis: Jedis = InternalRedisClient.getResource
 
     // 设置每个分区起始的offset
-    val offsets = mutable.Map[TopicPartition, Long]()
+    val offsets: mutable.Map[TopicPartition, Long] = mutable.Map[TopicPartition, Long]()
 
     topicPartitions.foreach { it =>
-      val topic = it._1
-      val partitions = it._2
+      val topic: String = it._1
+      val partitions: Int = it._2
       // 遍历分区，设置每个topic下对应partition的offset
       for (partition <- 0 until partitions) {
-        val topicPartitionKey = topic + ":" + partition
+        val topicPartitionKey: String = topic + ":" + partition
         var lastOffset = 0L
-        val lastSavedOffset = jedis.get(topicPartitionKey)
+        val lastSavedOffset: String = jedis.get(topicPartitionKey)
 
         if (null != lastSavedOffset) {
           try {
