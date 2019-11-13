@@ -5,11 +5,13 @@ import com.typesafe.config.{Config, ConfigFactory}
 import com.typesafe.scalalogging.Logger
 import org.abigballofmud.streaming.handler.HandlerApp
 import org.abigballofmud.streaming.model.VinSourceData
+import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.StringDeserializer
-import org.apache.spark.SparkConf
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.streaming.kafka010.{ConsumerStrategies, HasOffsetRanges, KafkaUtils, LocationStrategies}
+import org.apache.spark.streaming.dstream.InputDStream
+import org.apache.spark.streaming.kafka010.{ConsumerStrategies, HasOffsetRanges, KafkaUtils, LocationStrategies, OffsetRange}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import org.slf4j.LoggerFactory
 import scalikejdbc._
@@ -33,7 +35,7 @@ object App {
     val load: Config = ConfigFactory.load()
 
     // kafka
-    val kafkaParams = Map[String, Object](
+    val kafkaParams: Map[String, Object] = Map[String, Object](
       "bootstrap.servers" -> load.getString("kafka.brokers"),
       "key.deserializer" -> classOf[StringDeserializer],
       "value.deserializer" -> classOf[StringDeserializer],
@@ -41,10 +43,10 @@ object App {
       "auto.offset.reset" -> "earliest",
       "enable.auto.commit" -> (false: java.lang.Boolean)
     )
-    val topics = load.getString("kafka.topics").split(",").toSet
+    val topics: Set[String] = load.getString("kafka.topics").split(",").toSet
 
 
-    val conf = new SparkConf().
+    val conf: SparkConf = new SparkConf().
       setMaster("local[2]").
       setAppName("streaming_test").
       // 加这个配置访问集群中的hive
@@ -54,8 +56,8 @@ object App {
       set("hive.metastore.uris", "thrift://hdsp001:9083")
 
     // 创建StreamingSession
-    val sparkSession = getOrCreateSparkSession(conf)
-    val sc = sparkSession.sparkContext
+    val sparkSession: SparkSession = getOrCreateSparkSession(conf)
+    val sc: SparkContext = sparkSession.sparkContext
     // 创建StreamingContext
     val ssc = new StreamingContext(sc, Seconds(5))
 
@@ -71,7 +73,7 @@ object App {
         }).list().apply()
     }.toMap
 
-    val stream = if (offsets.isEmpty) {
+    val stream: InputDStream[ConsumerRecord[String, String]] = if (offsets.isEmpty) {
       // 第一次启动
       KafkaUtils.createDirectStream(
         ssc,
@@ -91,7 +93,7 @@ object App {
 
     // 处理kafka数据
     stream.foreachRDD(rdd => {
-      val offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+      val offsetRanges: Array[OffsetRange] = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
 
       rdd.map(_.value())
         .map(o => gson.fromJson(o, classOf[VinSourceData]))
@@ -130,7 +132,7 @@ object App {
    * @return SparkSession
    */
   def getOrCreateSparkSession(conf: SparkConf): SparkSession = {
-    val spark = SparkSession
+    val spark: SparkSession = SparkSession
       .builder()
       .config(conf)
       .enableHiveSupport()
