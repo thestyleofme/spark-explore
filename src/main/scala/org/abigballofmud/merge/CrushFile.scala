@@ -1,8 +1,8 @@
 package org.abigballofmud.merge
 
 import org.apache.hadoop.fs._
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.{SaveMode, SparkSession}
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 /**
  * <p>
@@ -34,7 +34,7 @@ object CrushFile {
     val fromDir = "hdfs://hdsp001:8020/warehouse/tablespace/spark/book_parquet"
     val tmpDir = "hdfs://hdsp001:8020/warehouse/tablespace/spark/book_parquet_temp"
 
-    val conf = new SparkConf()
+    val conf: SparkConf = new SparkConf()
       .setMaster("local[2]")
       .setAppName("spark-crush-file")
       // 加这个配置访问集群中的hive
@@ -45,10 +45,10 @@ object CrushFile {
       .set("spark.sql.parquet.compression.codec", "snappy")
 
     // 创建StreamingSession
-    val sparkSession = getOrCreateSparkSession(conf)
-    val sc = sparkSession.sparkContext
-    val fs = FileSystem.get(sc.hadoopConfiguration)
-    val df = sparkSession.table("test.book_parquet")
+    val sparkSession: SparkSession = getOrCreateSparkSession(conf)
+    val sc: SparkContext = sparkSession.sparkContext
+    val fs: FileSystem = FileSystem.get(sc.hadoopConfiguration)
+    val df: DataFrame = sparkSession.table("test.book_parquet")
     df.repartition(takePartition(fromDir, fs))
       .write
       .format("parquet")
@@ -98,7 +98,7 @@ object CrushFile {
    * @return SparkSession
    */
   def getOrCreateSparkSession(conf: SparkConf): SparkSession = {
-    val spark = SparkSession
+    val spark: SparkSession = SparkSession
       .builder()
       .config(conf)
       .enableHiveSupport()
