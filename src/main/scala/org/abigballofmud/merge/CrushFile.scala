@@ -8,7 +8,7 @@ import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
  * <p>
  * 合并日志文件：目前支持parquet file
  * 1.从fromDir目录中加载数据文件
- * 2.将文件输出到tmpDir，文件已arh字符开头
+ * 2.将文件输出到tmpDir，文件以arh字符开头
  * 3.mv tmpDir中的文件到fromDir中
  * 4.删除fromDir目录中非arh开头的文件
  * </p>

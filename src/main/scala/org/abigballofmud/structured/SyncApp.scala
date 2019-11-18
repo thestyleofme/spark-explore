@@ -32,14 +32,16 @@ object SyncApp {
     System.setProperty("HADOOP_USER_NAME", "hive")
     System.setProperty("user.name", "hive")
 
+    val appProperties: AppParams = new AppParams(args.apply(0))
+
     val conf: SparkConf = new SparkConf()
       .setMaster("local[2]")
-      .setAppName("test_structured_streaming")
+      .setAppName(appProperties.sparkAppName)
       // 加这个配置访问集群中的hive
       // https://stackoverflow.com/questions/39201409/how-to-query-data-stored-in-hive-table-using-sparksession-of-spark2
-      .set("spark.sql.warehouse.dir", "/warehouse/tablespace/managed/hive")
-      .set("metastore.catalog.default", "hive")
-      .set("hive.metastore.uris", "thrift://hdsp001:9083")
+      //      .set("spark.sql.warehouse.dir", "/warehouse/tablespace/managed/hive")
+      //      .set("metastore.catalog.default", "hive")
+      .set("hive.metastore.uris", appProperties.metastoreUris)
       // spark调优 http://www.imooc.com/article/262032
       // 以下设置是为了减少hdfs小文件的产生
       //    https://www.cnblogs.com/dtmobile-ksw/p/11254294.html
@@ -52,13 +54,15 @@ object SyncApp {
       .set("spark.sql.autoBroadcastJoinThreshold", "20971520")
 
     // redis
-    val redisHost: String = "hdsp004"
-    val redisPort: Int = 6379
-    val redisPassword: String = "hdsp_dev"
+    val redisHost: String = appProperties.redisHost
+    val redisPort: Int = appProperties.redisPort
+    val redisPassword: String = appProperties.redisPassword
 
     // kafka
-    val topic: String = "hdsp_spark_sync.hdsp_core.test_userinfo"
-    val brokers: String = "hdsp001:6667,hdsp002:6667,hdsp003:6667"
+    val topic: String = appProperties.kafkaConnectorName + "." + appProperties.databaseName + "." + appProperties.tableName
+
+    val brokers: String = appProperties.kafkaBootstrapServers
+    val hiveTableName: String = appProperties.hiveDatabaseName + "." + appProperties.hiveTableName
 
     // 创建redis
     InternalRedisClient.makePool(redisHost, redisPort, redisPassword)
@@ -81,26 +85,25 @@ object SyncApp {
       .option("startingOffsets", partitionOffset)
       .load()
 
+    val columns: List[String] = appProperties.columns
+    var dataStructType = new StructType()
+    var afterList: List[String] = List()
+    var beforeList: List[String] = List()
+    var colList: List[String] = List()
+    for (elem <- columns) {
+      dataStructType = dataStructType.add(elem.trim, StringType, nullable = false)
+      colList = colList :+ elem.trim
+      afterList = afterList :+ ("event.payload.after." + elem.trim)
+      beforeList = beforeList :+ ("event.payload.before." + elem.trim)
+    }
+    afterList = afterList :+ "ts" :+ "topic" :+ "partition" :+ "offset"
+    beforeList = beforeList :+ "ts" :+ "topic" :+ "partition" :+ "offset"
+
     val payloadSchema_o: StructType = new StructType()
       .add("payload",
         new StructType().add("op", StringType)
-          .add("before", new StructType()
-            .add("id", StringType, nullable = false)
-            .add("username", StringType, nullable = false)
-            .add("password", StringType, nullable = false)
-            .add("age", StringType, nullable = false)
-            .add("sex", StringType, nullable = false)
-            .add("address", StringType, nullable = false)
-            , nullable = false)
-          .add("after",
-            new StructType()
-              .add("id", StringType, nullable = false)
-              .add("username", StringType, nullable = false)
-              .add("password", StringType, nullable = false)
-              .add("age", StringType, nullable = false)
-              .add("sex", StringType, nullable = false)
-              .add("address", StringType, nullable = false)
-            , nullable = false)
+          .add("before", dataStructType, nullable = false)
+          .add("after", dataStructType, nullable = false)
       )
 
     StructType(payloadSchema_o)
@@ -113,17 +116,7 @@ object SyncApp {
       functions.col("offset").cast("string").alias("offset"))
       .filter($"event.payload.op".===("c") || $"event.payload.op".===("u"))
       .select("event.payload.op",
-        "event.payload.after.id",
-        "event.payload.after.username",
-        "event.payload.after.password",
-        "event.payload.after.age",
-        "event.payload.after.sex",
-        "event.payload.after.address",
-        "ts",
-        "topic",
-        "partition",
-        "offset")
-
+        afterList: _*)
     val df_d: DataFrame = df.select(
       functions.from_json(functions.col("value").cast("string"), payloadSchema_o).alias("event"),
       functions.col("timestamp").cast("string").alias("ts"),
@@ -132,33 +125,17 @@ object SyncApp {
       functions.col("offset").cast("string").alias("offset"))
       .filter($"event.payload.op".===("d"))
       .select("event.payload.op",
-        "event.payload.before.id",
-        "event.payload.before.username",
-        "event.payload.before.password",
-        "event.payload.before.age",
-        "event.payload.before.sex",
-        "event.payload.before.address",
-        "ts",
-        "topic",
-        "partition",
-        "offset")
+        beforeList: _*)
     val ds: Dataset[Row] = df_c_u.union(df_d)
 
-    //    val query = ds.repartition(1)
-    //      .writeStream
-    //      .trigger(Trigger.ProcessingTime(10, TimeUnit.SECONDS))
-    //      .option("checkpointLocation", "check/path03")
-    //      .format("parquet")
-    //      .outputMode("append")
-    //      .option("path", "hdfs://hdsp001:8020/warehouse/tablespace/spark/userinfo_parquet")
-    //      .start()
     // 直接写到表
+    colList = colList :+ "ts"
     var pipeline: Pipeline = null
     var jedis: Jedis = null
     val query: StreamingQuery = ds.repartition(1)
       .repartition(1)
       .writeStream
-      .trigger(Trigger.ProcessingTime(10, TimeUnit.SECONDS))
+      .trigger(Trigger.ProcessingTime(appProperties.interval, TimeUnit.SECONDS))
       .foreach(writer = new ForeachWriter[Row] {
         override def open(partitionId: Long, version: Long): Boolean = {
           jedis = InternalRedisClient.getResource
@@ -178,19 +155,13 @@ object SyncApp {
           val rowRDD: RDD[Row] = sparkSession.sparkContext.makeRDD(Seq(row))
           val data: DataFrame = sparkSession.createDataFrame(rowRDD, row.schema).toDF()
             .select("op",
-              "id",
-              "username",
-              "password",
-              "age",
-              "sex",
-              "address",
-              "ts")
+              colList: _*)
           data.show()
           if (data.count() > 0) {
-            data.write.mode(SaveMode.Append).format("hive").saveAsTable("test.userinfo_parquet")
+            data.write.mode(SaveMode.Append).format("hive").saveAsTable(hiveTableName)
           }
           // 记录offset
-          pipeline.set(map("topic"), "{\"%s\":%s}".format(map("partition"), map("offset")))
+          pipeline.set(map("topic"), "{\"%s\":%s}".format(map("partition"), map("offset").toInt + 1))
         }
 
         override def close(errorOrNull: Throwable): Unit = {

@@ -121,7 +121,7 @@ object RealTimeSyncApp {
     //          true
     //        }
     //
-    //        override def process(value: StructType): Unit = {
+    //        override def process(value: Row): Unit = {
     //
     //        }
     //

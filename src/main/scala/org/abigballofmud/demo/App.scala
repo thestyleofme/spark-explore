@@ -32,97 +32,101 @@ object App {
 
   def main(args: Array[String]): Unit = {
 
-    val load: Config = ConfigFactory.load()
-
-    // kafka
-    val kafkaParams: Map[String, Object] = Map[String, Object](
-      "bootstrap.servers" -> load.getString("kafka.brokers"),
-      "key.deserializer" -> classOf[StringDeserializer],
-      "value.deserializer" -> classOf[StringDeserializer],
-      "group.id" -> load.getString("kafka.group.id"),
-      "auto.offset.reset" -> "earliest",
-      "enable.auto.commit" -> (false: java.lang.Boolean)
-    )
-    val topics: Set[String] = load.getString("kafka.topics").split(",").toSet
+    val aList: List[String] = List("a")
+    println("b" +: aList)
 
 
-    val conf: SparkConf = new SparkConf().
-      setMaster("local[2]").
-      setAppName("streaming_test").
-      // 加这个配置访问集群中的hive
-      // https://stackoverflow.com/questions/39201409/how-to-query-data-stored-in-hive-table-using-sparksession-of-spark2
-      set("spark.sql.warehouse.dir", "/warehouse/tablespace/managed/hive").
-      set("metastore.catalog.default", "hive").
-      set("hive.metastore.uris", "thrift://hdsp001:9083")
+    /* val load: Config = ConfigFactory.load()
 
-    // 创建StreamingSession
-    val sparkSession: SparkSession = getOrCreateSparkSession(conf)
-    val sc: SparkContext = sparkSession.sparkContext
-    // 创建StreamingContext
-    val ssc = new StreamingContext(sc, Seconds(5))
+     // kafka
+     val kafkaParams: Map[String, Object] = Map[String, Object](
+       "bootstrap.servers" -> load.getString("kafka.brokers"),
+       "key.deserializer" -> classOf[StringDeserializer],
+       "value.deserializer" -> classOf[StringDeserializer],
+       "group.id" -> load.getString("kafka.group.id"),
+       "auto.offset.reset" -> "earliest",
+       "enable.auto.commit" -> (false: java.lang.Boolean)
+     )
+     val topics: Set[String] = load.getString("kafka.topics").split(",").toSet
 
-    // 从mysql获取topic的offset
-    // todo 数据库连接池
-    // 加载配置信息
-    DBs.setup()
-    val offsets: Map[TopicPartition, Long] = DB.readOnly { implicit session =>
-      sql"""select topic, group_id, partitions, offset from spark_streaming_kafka_offset where group_id = ?"""
-        .bind(load.getString("kafka.group.id"))
-        .map(rs => {
-          (new TopicPartition(rs.string("topic"), rs.int("partition")), rs.long("offset"))
-        }).list().apply()
-    }.toMap
 
-    val stream: InputDStream[ConsumerRecord[String, String]] = if (offsets.isEmpty) {
-      // 第一次启动
-      KafkaUtils.createDirectStream(
-        ssc,
-        LocationStrategies.PreferConsistent,
-        ConsumerStrategies.Subscribe[String, String](topics, kafkaParams)
-      )
-    } else {
-      // 非第一次启动
+     val conf: SparkConf = new SparkConf().
+       setMaster("local[2]").
+       setAppName("streaming_test").
+       // 加这个配置访问集群中的hive
+       // https://stackoverflow.com/questions/39201409/how-to-query-data-stored-in-hive-table-using-sparksession-of-spark2
+       set("spark.sql.warehouse.dir", "/warehouse/tablespace/managed/hive").
+       set("metastore.catalog.default", "hive").
+       set("hive.metastore.uris", "thrift://hdsp001:9083")
 
-      // todo 检验offset是否过期, 存的和查询出来进行对比
+     // 创建StreamingSession
+     val sparkSession: SparkSession = getOrCreateSparkSession(conf)
+     val sc: SparkContext = sparkSession.sparkContext
+     // 创建StreamingContext
+     val ssc = new StreamingContext(sc, Seconds(5))
 
-      KafkaUtils.createDirectStream(
-        ssc,
-        LocationStrategies.PreferConsistent,
-        ConsumerStrategies.Assign[String, String](offsets.keys.toList, kafkaParams, offsets))
-    }
+     // 从mysql获取topic的offset
+     // todo 数据库连接池
+     // 加载配置信息
+     DBs.setup()
+     val offsets: Map[TopicPartition, Long] = DB.readOnly { implicit session =>
+       sql"""select topic, group_id, partitions, offset from spark_streaming_kafka_offset where group_id = ?"""
+         .bind(load.getString("kafka.group.id"))
+         .map(rs => {
+           (new TopicPartition(rs.string("topic"), rs.int("partition")), rs.long("offset"))
+         }).list().apply()
+     }.toMap
 
-    // 处理kafka数据
-    stream.foreachRDD(rdd => {
-      val offsetRanges: Array[OffsetRange] = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+     val stream: InputDStream[ConsumerRecord[String, String]] = if (offsets.isEmpty) {
+       // 第一次启动
+       KafkaUtils.createDirectStream(
+         ssc,
+         LocationStrategies.PreferConsistent,
+         ConsumerStrategies.Subscribe[String, String](topics, kafkaParams)
+       )
+     } else {
+       // 非第一次启动
 
-      rdd.map(_.value())
-        .map(o => gson.fromJson(o, classOf[VinSourceData]))
-        .filter(_.st.equalsIgnoreCase("event.suprKnkSrv.knkRatio")
-        )
+       // todo 检验offset是否过期, 存的和查询出来进行对比
 
-      // 记录offset
-      offsetRanges.foreach { offsetRange =>
-        log.info("save offsets, topic: {}, partition: {}, offset: {}",
-          offsetRange.topic,
-          offsetRange.partition,
-          offsetRange.untilOffset)
-        DB.autoCommit { implicit session =>
-          sql"""replace into spark_streaming_kafka_offset(topic, group_id, partitions, offset) values(?,?,?,?)"""
-            .bind(
-              offsetRange.topic,
-              load.getString("kafka.group.id"),
-              offsetRange.partition,
-              offsetRange.untilOffset)
-            .update()
-            .apply()
-        }
+       KafkaUtils.createDirectStream(
+         ssc,
+         LocationStrategies.PreferConsistent,
+         ConsumerStrategies.Assign[String, String](offsets.keys.toList, kafkaParams, offsets))
+     }
 
-      }
-    }
-    )
+     // 处理kafka数据
+     stream.foreachRDD(rdd => {
+       val offsetRanges: Array[OffsetRange] = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
 
-    // 启动并等待
-    startAndWait(ssc)
+       rdd.map(_.value())
+         .map(o => gson.fromJson(o, classOf[VinSourceData]))
+         .filter(_.st.equalsIgnoreCase("event.suprKnkSrv.knkRatio")
+         )
+
+       // 记录offset
+       offsetRanges.foreach { offsetRange =>
+         log.info("save offsets, topic: {}, partition: {}, offset: {}",
+           offsetRange.topic,
+           offsetRange.partition,
+           offsetRange.untilOffset)
+         DB.autoCommit { implicit session =>
+           sql"""replace into spark_streaming_kafka_offset(topic, group_id, partitions, offset) values(?,?,?,?)"""
+             .bind(
+               offsetRange.topic,
+               load.getString("kafka.group.id"),
+               offsetRange.partition,
+               offsetRange.untilOffset)
+             .update()
+             .apply()
+         }
+
+       }
+     }
+     )
+
+     // 启动并等待
+     startAndWait(ssc)*/
   }
 
 
