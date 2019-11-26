@@ -18,7 +18,6 @@ class AppParams(var filePath: String) {
 
   // spark
   val sparkAppName: String = appProperties.getString("sparkAppName")
-  val hiveWarehouse: String = appProperties.getString("hiveWarehouse")
   val metastoreUris: String = appProperties.getString("metastoreUris")
 
   // kafka
@@ -30,9 +29,7 @@ class AppParams(var filePath: String) {
   val redisPassword: String = appProperties.getString("redisPassword")
 
   // sync
-  val kafkaConnectorName: String = appProperties.getString("kafkaConnectorName")
-  val databaseName: String = appProperties.getString("databaseName")
-  val tableName: String = appProperties.getString("tableName")
+  val kafkaTopic: String = appProperties.getString("kafkaTopic")
   val columns: List[String] = appProperties.getString("columns").trim.split(",").toList
   val interval: Long = appProperties.getLong("interval")
 

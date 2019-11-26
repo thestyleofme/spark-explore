@@ -59,7 +59,7 @@ object SyncApp {
     val redisPassword: String = appProperties.redisPassword
 
     // kafka
-    val topic: String = appProperties.kafkaConnectorName + "." + appProperties.databaseName + "." + appProperties.tableName
+    val topic: String = appProperties.kafkaTopic
 
     val brokers: String = appProperties.kafkaBootstrapServers
     val hiveTableName: String = appProperties.hiveDatabaseName + "." + appProperties.hiveTableName
@@ -107,7 +107,6 @@ object SyncApp {
       )
 
     StructType(payloadSchema_o)
-    val nestTimestampFormat = "yyyy-MM-dd'T'HH:mm:ss.sss'Z'"
     val df_c_u: DataFrame = df.select(
       functions.from_json(functions.col("value").cast("string"), payloadSchema_o).alias("event"),
       functions.col("timestamp").cast("string").alias("ts"),
