@@ -3,7 +3,7 @@ package org.abigballofmud.structured
 import java.util.concurrent.TimeUnit
 
 import com.typesafe.scalalogging.Logger
-import org.abigballofmud.streaming.redis.InternalRedisClient
+import org.abigballofmud.redis.InternalRedisClient
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._

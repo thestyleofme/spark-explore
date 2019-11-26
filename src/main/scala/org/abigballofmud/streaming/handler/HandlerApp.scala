@@ -8,7 +8,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.typesafe.scalalogging.Logger
 import org.abigballofmud.streaming.model.{SourceData, VinSourceData}
-import org.abigballofmud.streaming.redis.InternalRedisClient
+import org.abigballofmud.redis.InternalRedisClient
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.StringDeserializer

@@ -1,4 +1,4 @@
-package org.abigballofmud.streaming.redis
+package org.abigballofmud.redis
 
 import java.util.Objects
 
