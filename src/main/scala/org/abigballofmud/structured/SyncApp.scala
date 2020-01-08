@@ -2,13 +2,15 @@ package org.abigballofmud.structured
 
 import java.util.concurrent.TimeUnit
 
+import com.google.gson.Gson
 import com.typesafe.scalalogging.Logger
 import org.abigballofmud.redis.InternalRedisClient
-import org.apache.spark.SparkConf
+import org.abigballofmud.structured.model.SyncConfig
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.streaming.{StreamingQuery, Trigger}
 import org.apache.spark.sql.types.{StringType, StructType}
+import org.apache.spark.{SparkConf, SparkContext}
 import org.slf4j.LoggerFactory
 import redis.clients.jedis.{Jedis, Pipeline}
 
@@ -16,32 +18,54 @@ import scala.collection.mutable
 
 /**
  * <p>
- * description
+ * 运行示例:
+ * nohup /usr/hdp/3.1.0.0-78/spark2/bin/spark-submit \
+ * --class org.abigballofmud.structured.SyncApp \
+ * --master yarn
+ * --deploy-mode client \
+ * /data/spark-apps/spark-app-1.1.3-SNAPSHOT.jar 'file' '/data/spark_config_file/userinfo_spark_sync.json' \
+ * > /data/spark-apps/spark-sync.log 2>&1 &
  * </p>
  *
- * @author isacc 2019/11/04 15:33
+ * @author abigballofmud 2019/11/04 15:33
  * @since 1.0
  */
 //noinspection DuplicatedCode
 object SyncApp {
 
   private val log = Logger(LoggerFactory.getLogger(SyncApp.getClass))
+  private val gson = new Gson()
 
   def main(args: Array[String]): Unit = {
 
     System.setProperty("HADOOP_USER_NAME", "hive")
     System.setProperty("user.name", "hive")
 
-    val appProperties: AppParams = new AppParams(args.apply(0))
+    log.info("load spark conf file: [{}]", args.apply(0) + ":" + args.apply(1))
+
+    // 解析参数
+    var syncConfigStr: String = null
+    var syncConfig: SyncConfig = null
+    val tempSc = new SparkContext(new SparkConf()
+      //      .setMaster("local[2]")
+      .setAppName("test"))
+    if (args.apply(0).equals("file")) {
+      syncConfigStr = tempSc.textFile("file:///" + args.apply(1)).collect().mkString
+      syncConfig = gson.fromJson(syncConfigStr, classOf[SyncConfig])
+    } else {
+      syncConfigStr = tempSc.textFile("hdfs://" + args.apply(1)).collect().mkString
+      syncConfig = gson.fromJson(syncConfigStr, classOf[SyncConfig])
+    }
+    tempSc.stop()
 
     val conf: SparkConf = new SparkConf()
       .setMaster("local[2]")
-      .setAppName(appProperties.sparkAppName)
+      .setAppName(syncConfig.syncSpark.sparkAppName)
       // 加这个配置访问集群中的hive
       // https://stackoverflow.com/questions/39201409/how-to-query-data-stored-in-hive-table-using-sparksession-of-spark2
       //      .set("spark.sql.warehouse.dir", "/warehouse/tablespace/managed/hive")
       //      .set("metastore.catalog.default", "hive")
-      .set("hive.metastore.uris", appProperties.metastoreUris)
+      .set("hive.metastore.uris", syncConfig.syncHive.metastoreUris)
       // spark调优 http://www.imooc.com/article/262032
       // 以下设置是为了减少hdfs小文件的产生
       //    https://www.cnblogs.com/dtmobile-ksw/p/11254294.html
@@ -54,22 +78,22 @@ object SyncApp {
       .set("spark.sql.autoBroadcastJoinThreshold", "20971520")
 
     // redis
-    val redisHost: String = appProperties.redisHost
-    val redisPort: Int = appProperties.redisPort
-    val redisPassword: String = appProperties.redisPassword
+    val redisHost: String = syncConfig.syncRedis.redisHost
+    val redisPort: Int = syncConfig.syncRedis.redisPort
+    val redisPassword: String = syncConfig.syncRedis.redisPassword
 
     // kafka
-    val topic: String = appProperties.kafkaTopic
+    val topic: String = syncConfig.syncKafka.kafkaTopic
 
-    val brokers: String = appProperties.kafkaBootstrapServers
-    val hiveTableName: String = appProperties.hiveDatabaseName + "." + appProperties.hiveTableName
+    val brokers: String = syncConfig.syncKafka.kafkaBootstrapServers
+    val hiveTableName: String = syncConfig.syncSpark.hiveDatabaseName + "." + syncConfig.syncSpark.hiveTableName
 
     // 创建redis
     InternalRedisClient.makePool(redisHost, redisPort, redisPassword)
 
     var partitionOffset: String = getLastTopicOffset(topic)
     if (partitionOffset == null) {
-      partitionOffset = "latest"
+      partitionOffset = syncConfig.syncKafka.initDefaultOffset
     } else {
       partitionOffset = "{\"%s\":%s}".format(topic, partitionOffset).trim
     }
@@ -85,7 +109,7 @@ object SyncApp {
       .option("startingOffsets", partitionOffset)
       .load()
 
-    val columns: List[String] = appProperties.columns
+    val columns: List[String] = syncConfig.syncSpark.columns.trim.split(",").toList
     var dataStructType = new StructType()
     var afterList: List[String] = List()
     var beforeList: List[String] = List()
@@ -134,7 +158,7 @@ object SyncApp {
     val query: StreamingQuery = ds.repartition(1)
       .repartition(1)
       .writeStream
-      .trigger(Trigger.ProcessingTime(appProperties.interval, TimeUnit.SECONDS))
+      .trigger(Trigger.ProcessingTime(syncConfig.syncSpark.interval, TimeUnit.SECONDS))
       .foreach(writer = new ForeachWriter[Row] {
         override def open(partitionId: Long, version: Long): Boolean = {
           jedis = InternalRedisClient.getResource
@@ -182,11 +206,13 @@ object SyncApp {
    * @return SparkSession
    */
   def getOrCreateSparkSession(conf: SparkConf): SparkSession = {
+    //    SparkSession.clearDefaultSession()
     val spark: SparkSession = SparkSession
       .builder()
       .config(conf)
       .enableHiveSupport()
       .getOrCreate()
+    //    SparkSession.clearDefaultSession()
     spark
   }
 
