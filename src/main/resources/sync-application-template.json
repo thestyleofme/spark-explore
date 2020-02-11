@@ -2,7 +2,7 @@
   "syncSpark": {
     "sparkAppName": "dev_test_demo0210",
     "columns": "id,name",
-    "interval": 30,
+    "interval": 10,
     "hiveDatabaseName": "test",
     "hiveTableName": "dev_test_demo0210",
     "writeType": "hive",

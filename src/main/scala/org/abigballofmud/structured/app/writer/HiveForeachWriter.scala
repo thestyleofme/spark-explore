@@ -1,8 +1,8 @@
 package org.abigballofmud.structured.app.writer
 
 import com.typesafe.scalalogging.Logger
+import org.abigballofmud.common.CommonUtil
 import org.abigballofmud.redis.InternalRedisClient
-import org.abigballofmud.structured.app.SyncApp.getOrCreateSparkSession
 import org.abigballofmud.structured.app.model.SyncConfig
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
@@ -14,18 +14,24 @@ import scala.collection.mutable
 
 /**
  * <p>
- * description
+ * NOTE: this class can not work at spark 2.4.x, the reason i want to know also
+ * maybe??: the df ,spark2.3.x planWithBarrier ,however spark2.4.x no planWithBarrier
+ * how to fix it?
  * </p>
  *
  * @author isacc 2020/02/10 11:59
  * @since 1.0
  */
+//noinspection DuplicatedCode
 object HiveForeachWriter {
 
   private val log = Logger(LoggerFactory.getLogger(HiveForeachWriter.getClass))
 
-  def handle(syncConfig: SyncConfig, conf: SparkConf, colList: List[String]): ForeachWriter[Row] = {
+  def handle(syncConfig: SyncConfig, conf: SparkConf): ForeachWriter[Row] = {
     val hiveTableName: String = syncConfig.syncSpark.hiveDatabaseName + "." + syncConfig.syncSpark.hiveTableName
+    val columns: List[String] = syncConfig.syncSpark.columns.trim.split(",").toList
+    var colList: List[String] = List()
+    colList = columns :+ "op" :+ "ts"
     val writer: ForeachWriter[Row] = new ForeachWriter[Row] {
       var pipeline: Pipeline = _
       var jedis: Jedis = _
@@ -44,10 +50,11 @@ object HiveForeachWriter {
         for (i <- row.schema.fields.indices) {
           map += (row.schema.fields.apply(i).name -> row.getString(i))
         }
-        val sparkSession: SparkSession = getOrCreateSparkSession(conf)
-        val rowRDD: RDD[Row] = sparkSession.sparkContext.makeRDD(Seq(row))
-        val data: DataFrame = sparkSession.createDataFrame(rowRDD, row.schema).toDF().selectExpr(colList:_*)
-        data.show()
+        val spark: SparkSession = CommonUtil.getOrCreateSparkSession(conf)
+        val rowRDD: RDD[Row] = spark.sparkContext.makeRDD(Seq(row))
+        val data: DataFrame = spark.createDataFrame(rowRDD, row.schema).selectExpr(colList: _*)
+        // there will throw NPE if work at spark2.4.x
+        data.show(false)
         if (data.count() > 0) {
           data.write.mode(SaveMode.Append).format("hive").saveAsTable(hiveTableName)
         }

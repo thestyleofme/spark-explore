@@ -15,10 +15,15 @@ import scala.collection.mutable
  * @author isacc 2020/02/11 11:37
  * @since 1.0
  */
+//noinspection DuplicatedCode
 object HiveForeachBatchWriter {
 
-  def handle(syncConfig: SyncConfig, batchDF: DataFrame, batchId: Long, spark: SparkSession, colList: List[String]): Unit = {
+  def handle(syncConfig: SyncConfig, batchDF: DataFrame, batchId: Long, spark: SparkSession): Unit = {
     import spark.implicits._
+    // hive表中加 op ts
+    val columns: List[String] = syncConfig.syncSpark.columns.trim.split(",").toList
+    var colList: List[String] = List()
+    colList = columns :+ "op" :+ "ts"
     batchDF.persist()
     batchDF.show()
     val topicInfo: Dataset[TopicInfo] = batchDF.as[TopicInfo]
