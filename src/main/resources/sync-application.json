@@ -4,7 +4,8 @@
     "columns": "id, username, password, age, sex, address",
     "interval": 30,
     "hiveDatabaseName": "test",
-    "hiveTableName": "userinfo_parquet"
+    "hiveTableName": "userinfo_parquet",
+    "writeType": "hive"
   },
   "syncHive": {
     "metastoreUris": "thrift://hdsp001:9083"

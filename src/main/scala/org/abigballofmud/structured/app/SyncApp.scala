@@ -1,20 +1,19 @@
-package org.abigballofmud.structured
+package org.abigballofmud.structured.app
 
 import java.util.concurrent.TimeUnit
 
 import com.google.gson.Gson
 import com.typesafe.scalalogging.Logger
 import org.abigballofmud.redis.InternalRedisClient
-import org.abigballofmud.structured.model.SyncConfig
-import org.apache.spark.rdd.RDD
+import org.abigballofmud.structured.app.constants.WriterTypeConstant
+import org.abigballofmud.structured.app.model.SyncConfig
+import org.abigballofmud.structured.app.writer.{HiveForeachBatchWriter, HiveForeachWriter}
 import org.apache.spark.sql._
 import org.apache.spark.sql.streaming.{StreamingQuery, Trigger}
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.slf4j.LoggerFactory
-import redis.clients.jedis.{Jedis, Pipeline}
-
-import scala.collection.mutable
+import redis.clients.jedis.Jedis
 
 /**
  * <p>
@@ -47,7 +46,8 @@ object SyncApp {
     var syncConfigStr: String = null
     var syncConfig: SyncConfig = null
     val tempSc = new SparkContext(new SparkConf()
-      //      .setMaster("local[2]")
+      //      本地调试时 不注释 spark服务器运行时需注释
+      .setMaster("local[2]")
       .setAppName("test"))
     if (args.apply(0).equals("file")) {
       syncConfigStr = tempSc.textFile("file:///" + args.apply(1)).collect().mkString
@@ -86,7 +86,6 @@ object SyncApp {
     val topic: String = syncConfig.syncKafka.kafkaTopic
 
     val brokers: String = syncConfig.syncKafka.kafkaBootstrapServers
-    val hiveTableName: String = syncConfig.syncSpark.hiveDatabaseName + "." + syncConfig.syncSpark.hiveTableName
 
     // 创建redis
     InternalRedisClient.makePool(redisHost, redisPort, redisPassword)
@@ -152,52 +151,42 @@ object SyncApp {
     val ds: Dataset[Row] = df_c_u.union(df_d)
 
     // 直接写到表
-    colList = colList :+ "ts"
-    var pipeline: Pipeline = null
-    var jedis: Jedis = null
-    val query: StreamingQuery = ds.repartition(1)
-      .repartition(1)
-      .writeStream
+    colList = colList :+ "op" :+ "ts"
+
+    val query: StreamingQuery = ds.repartition(1).writeStream
       .trigger(Trigger.ProcessingTime(syncConfig.syncSpark.interval, TimeUnit.SECONDS))
-      .foreach(writer = new ForeachWriter[Row] {
-        override def open(partitionId: Long, version: Long): Boolean = {
-          jedis = InternalRedisClient.getResource
-          pipeline = jedis.pipelined()
-          // 会阻塞redis
-          pipeline.multi()
-          true
-        }
-
-        override def process(row: Row): Unit = {
-          log.info("row: {}", row)
-          val map: mutable.Map[String, String] = scala.collection.mutable.Map[String, String]()
-          for (i <- row.schema.fields.indices) {
-            map += (row.schema.fields.apply(i).name -> row.getString(i))
-          }
-          val sparkSession: SparkSession = getOrCreateSparkSession(conf)
-          val rowRDD: RDD[Row] = sparkSession.sparkContext.makeRDD(Seq(row))
-          val data: DataFrame = sparkSession.createDataFrame(rowRDD, row.schema).toDF()
-            .select("op",
-              colList: _*)
-          data.show()
-          if (data.count() > 0) {
-            data.write.mode(SaveMode.Append).format("hive").saveAsTable(hiveTableName)
-          }
-          // 记录offset
-          pipeline.set(map("topic"), "{\"%s\":%s}".format(map("partition"), map("offset").toInt + 1))
-        }
-
-        override def close(errorOrNull: Throwable): Unit = {
-          // 执行，释放
-          pipeline.exec()
-          pipeline.sync()
-          pipeline.close()
-          InternalRedisClient.recycleResource(jedis)
-        }
-      })
+      //      .foreach(writer = getSink(syncConfig, conf, colList))
+      .foreachBatch { (batchDF: DataFrame, batchId: Long) =>
+        handler(syncConfig, batchDF, batchId, spark, colList)
+      }
       .start()
 
     query.awaitTermination()
+  }
+
+  val handler: (SyncConfig, DataFrame, Long, SparkSession, List[String]) =>
+    Unit = (syncConfig: SyncConfig,
+            batchDF: DataFrame,
+            batchId: Long,
+            spark: SparkSession,
+            colList: List[String]) => {
+    val writeType: String = syncConfig.syncSpark.writeType
+    if (WriterTypeConstant.HIVE.equalsIgnoreCase(writeType)) {
+      HiveForeachBatchWriter.handle(syncConfig, batchDF, batchId, spark, colList)
+    } else {
+      throw new IllegalArgumentException("invalid writerType")
+    }
+  }
+
+  def getForeachSink(syncConfig: SyncConfig, conf: SparkConf, colList: List[String]): ForeachWriter[Row] = {
+    val writeType: String = syncConfig.syncSpark.writeType
+    var writer: ForeachWriter[Row] = null
+    if (WriterTypeConstant.HIVE.equalsIgnoreCase(writeType)) {
+      writer = HiveForeachWriter.handle(syncConfig, conf, colList)
+    } else {
+      throw new IllegalArgumentException("invalid writerType")
+    }
+    writer
   }
 
   /**

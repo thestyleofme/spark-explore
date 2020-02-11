@@ -1,4 +1,4 @@
-package org.abigballofmud.structured.model
+package org.abigballofmud.structured.app.model
 
 import redis.clients.jedis.Protocol
 
