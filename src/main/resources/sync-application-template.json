@@ -5,7 +5,7 @@
     "interval": 10,
     "hiveDatabaseName": "test",
     "hiveTableName": "dev_test_demo0210",
-    "writeType": "hive",
+    "writeType": "jdbc",
     "writeHdfsPath": ""
   },
   "syncHive": {
@@ -21,5 +21,16 @@
     "redisPort": 6379,
     "redisPassword": "hdsp_dev",
     "redisDataBase": 0
+  },
+  "syncJdbc": {
+    "dbType": "MYSQL",
+    "pk": "id",
+    "saveMode": "upsert",
+    "driver": "com.mysql.jdbc.Driver",
+    "jdbcUrl": "jdbc:mysql://dev.hdsp.hand.com:7233/hdsp_test?useUnicode=true&characterEncoding=utf-8&useSSL=false",
+    "user": "hdsp_dev",
+    "pwd": "hdsp_dev",
+    "schema": "hdsp_test",
+    "table": "dev_test_demo_0210_copy"
   }
 }

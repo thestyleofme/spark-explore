@@ -12,6 +12,6 @@ public interface WriterTypeConstant {
 
     String HIVE = "hive";
     String HDFS = "hdfs";
-    String MYSQL = "mysql";
+    String JDBC = "jdbc";
 
 }

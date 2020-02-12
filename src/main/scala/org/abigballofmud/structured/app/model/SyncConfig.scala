@@ -13,7 +13,8 @@ import redis.clients.jedis.Protocol
 case class SyncConfig(syncSpark: SyncSpark,
                       syncHive: SyncHive,
                       syncKafka: SyncKafka,
-                      syncRedis: SyncRedis
+                      syncRedis: SyncRedis,
+                      syncJdbc: SyncJdbc
                      ) extends Serializable
 
 case class SyncHive(metastoreUris: String) extends Serializable
@@ -34,3 +35,13 @@ case class SyncSpark(sparkAppName: String,
                      hiveTableName: String,
                      writeType: String,
                      writeHdfsPath: String) extends Serializable
+
+case class SyncJdbc(dbType: String,
+                    pk: String,
+                    saveMode: String,
+                    driver: String,
+                    jdbcUrl: String,
+                    user: String,
+                    pwd: String,
+                    schema: String,
+                    table: String) extends Serializable

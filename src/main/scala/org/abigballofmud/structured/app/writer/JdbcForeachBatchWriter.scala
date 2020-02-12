@@ -2,7 +2,8 @@ package org.abigballofmud.structured.app.writer
 
 import org.abigballofmud.redis.InternalRedisClient
 import org.abigballofmud.structured.app.model.{SyncConfig, TopicInfo}
-import org.apache.spark.sql.{DataFrame, Dataset, SaveMode, SparkSession}
+import org.abigballofmud.structured.app.utils.JdbcUtil
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import redis.clients.jedis.{Jedis, Pipeline}
 
 import scala.collection.mutable
@@ -12,25 +13,24 @@ import scala.collection.mutable
  * description
  * </p>
  *
- * @author isacc 2020/02/11 11:37
+ * @author isacc 2020/02/12 20:00:46
  * @since 1.0
  */
 //noinspection DuplicatedCode
-object HiveForeachBatchWriter {
+object JdbcForeachBatchWriter {
 
   def handle(syncConfig: SyncConfig, batchDF: DataFrame, batchId: Long, spark: SparkSession): Unit = {
     import spark.implicits._
-    // hive表中加 op ts
     val columns: List[String] = syncConfig.syncSpark.columns.trim.split(",").toList
     var colList: List[String] = List()
-    colList = columns :+ "op" :+ "ts"
+    colList = columns :+ "op"
     batchDF.persist()
     batchDF.show()
     val topicInfo: Dataset[TopicInfo] = batchDF.as[TopicInfo]
-    val hiveTableName: String = syncConfig.syncSpark.hiveDatabaseName + "." + syncConfig.syncSpark.hiveTableName
     val df: DataFrame = batchDF.toDF().selectExpr(colList: _*)
     if (df.count() > 0) {
-      df.write.mode(SaveMode.Append).format("hive").saveAsTable(hiveTableName)
+      // 同步到jdbc类型数据库中
+      JdbcUtil.saveDFtoDBCreateTableIfNotExist(syncConfig, df)
     }
     val jedis: Jedis = InternalRedisClient.getResource
     val pipeline: Pipeline = jedis.pipelined()

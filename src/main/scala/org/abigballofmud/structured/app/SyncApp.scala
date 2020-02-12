@@ -8,7 +8,7 @@ import org.abigballofmud.common.CommonUtil
 import org.abigballofmud.redis.InternalRedisClient
 import org.abigballofmud.structured.app.constants.WriterTypeConstant
 import org.abigballofmud.structured.app.model.SyncConfig
-import org.abigballofmud.structured.app.writer.{HiveForeachBatchWriter, HiveForeachWriter}
+import org.abigballofmud.structured.app.writer.{HiveForeachBatchWriter, HiveForeachWriter, JdbcForeachBatchWriter}
 import org.apache.spark.sql._
 import org.apache.spark.sql.streaming.{StreamingQuery, Trigger}
 import org.apache.spark.sql.types.{StringType, StructType}
@@ -91,7 +91,7 @@ object SyncApp {
     // 创建redis
     InternalRedisClient.makePool(redisHost, redisPort, redisPassword)
 
-    var partitionOffset: String = getLastTopicOffset(topic)
+    var partitionOffset: String = getLastTopicOffset(topic, syncConfig.syncSpark.sparkAppName)
     if (partitionOffset == null) {
       partitionOffset = syncConfig.syncKafka.initDefaultOffset
     } else {
@@ -151,7 +151,7 @@ object SyncApp {
 
     val query: StreamingQuery = ds.repartition(1).writeStream
       .trigger(Trigger.ProcessingTime(syncConfig.syncSpark.interval, TimeUnit.SECONDS))
-//      .foreach(writer = getForeachSink(syncConfig, conf))
+      //      .foreach(writer = getForeachSink(syncConfig, conf))
       .foreachBatch { (batchDF: DataFrame, batchId: Long) =>
         handler(syncConfig, batchDF, batchId, spark)
       }
@@ -167,8 +167,9 @@ object SyncApp {
             spark: SparkSession) => {
     val writeType: String = syncConfig.syncSpark.writeType
     if (WriterTypeConstant.HIVE.equalsIgnoreCase(writeType)) {
-      // 直接写到表
       HiveForeachBatchWriter.handle(syncConfig, batchDF, batchId, spark)
+    } else if (WriterTypeConstant.JDBC.equalsIgnoreCase(writeType)) {
+      JdbcForeachBatchWriter.handle(syncConfig, batchDF, batchId, spark)
     } else {
       throw new IllegalArgumentException("invalid writeType")
     }
@@ -190,9 +191,9 @@ object SyncApp {
    *
    * @return offset
    */
-  def getLastTopicOffset(topic: String): String = {
+  def getLastTopicOffset(topic: String, appName: String): String = {
     val jedis: Jedis = InternalRedisClient.getResource
-    val partitionOffset: String = jedis.get(topic)
+    val partitionOffset: String = jedis.get(topic + ":" + appName)
     jedis.close()
     partitionOffset
   }

@@ -47,6 +47,7 @@ object HiveForeachWriter {
       override def process(row: Row): Unit = {
         log.info("row: {}", row)
         val map: mutable.Map[String, String] = scala.collection.mutable.Map[String, String]()
+        map += ("appName" -> syncConfig.syncSpark.sparkAppName)
         for (i <- row.schema.fields.indices) {
           map += (row.schema.fields.apply(i).name -> row.getString(i))
         }
@@ -59,7 +60,7 @@ object HiveForeachWriter {
           data.write.mode(SaveMode.Append).format("hive").saveAsTable(hiveTableName)
         }
         // 记录offset
-        pipeline.set(map("topic"), "{\"%s\":%s}".format(map("partition"), map("offset").toInt + 1))
+        pipeline.set(map("topic") + ":" + map("appName"), "{\"%s\":%s}".format(map("partition"), map("offset").toInt + 1))
       }
 
       override def close(errorOrNull: Throwable): Unit = {
