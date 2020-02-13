@@ -288,7 +288,7 @@ object JdbcUtil {
     //===========删表
     //    println(dropTable(syncJdbc))
     //===========df写入表 注意 syncSpark不写pk
-    val syncConfig: SyncConfig = SyncConfig(SyncSpark("", "id,name", 10, "", "", "", ""), null, null, null, syncJdbc)
+    val syncConfig: SyncConfig = SyncConfig(SyncSpark("", "id,name", 10, "jdbc"), null, null, null, syncJdbc)
     saveDFtoDBCreateTableIfNotExist(syncConfig, df)
   }
 

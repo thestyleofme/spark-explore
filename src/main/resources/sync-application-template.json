@@ -3,13 +3,13 @@
     "sparkAppName": "dev_test_demo0210",
     "columns": "id,name",
     "interval": 10,
-    "hiveDatabaseName": "test",
-    "hiveTableName": "dev_test_demo0210",
-    "writeType": "jdbc",
-    "writeHdfsPath": ""
+    "writeType": "jdbc"
   },
   "syncHive": {
-    "metastoreUris": "thrift://hdsp001:9083"
+    "metastoreUris": "thrift://hdsp001:9083",
+    "hiveDatabaseName": "test",
+    "hiveTableName": "dev_test_demo0210",
+    "writeHdfsPath": ""
   },
   "syncKafka": {
     "kafkaBootstrapServers": "hdsp001:6667,hdsp002:6667,hdsp003:6667",

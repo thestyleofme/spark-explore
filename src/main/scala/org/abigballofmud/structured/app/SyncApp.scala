@@ -14,7 +14,6 @@ import org.apache.spark.sql.streaming.{StreamingQuery, Trigger}
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.slf4j.LoggerFactory
-import redis.clients.jedis.Jedis
 
 /**
  * <p>
@@ -91,7 +90,7 @@ object SyncApp {
     // 创建redis
     InternalRedisClient.makePool(redisHost, redisPort, redisPassword)
 
-    var partitionOffset: String = getLastTopicOffset(topic, syncConfig.syncSpark.sparkAppName)
+    var partitionOffset: String = CommonUtil.getLastTopicOffset(topic, syncConfig.syncSpark.sparkAppName)
     if (partitionOffset == null) {
       partitionOffset = syncConfig.syncKafka.initDefaultOffset
     } else {
@@ -184,18 +183,6 @@ object SyncApp {
       throw new IllegalArgumentException("invalid writeType")
     }
     writer
-  }
-
-  /**
-   * 获取topic上次消费的最新offset
-   *
-   * @return offset
-   */
-  def getLastTopicOffset(topic: String, appName: String): String = {
-    val jedis: Jedis = InternalRedisClient.getResource
-    val partitionOffset: String = jedis.get(topic + ":" + appName)
-    jedis.close()
-    partitionOffset
   }
 
 }

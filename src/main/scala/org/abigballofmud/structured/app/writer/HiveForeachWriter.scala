@@ -28,7 +28,7 @@ object HiveForeachWriter {
   private val log = Logger(LoggerFactory.getLogger(HiveForeachWriter.getClass))
 
   def handle(syncConfig: SyncConfig, conf: SparkConf): ForeachWriter[Row] = {
-    val hiveTableName: String = syncConfig.syncSpark.hiveDatabaseName + "." + syncConfig.syncSpark.hiveTableName
+    val hiveTableName: String = syncConfig.syncHive.hiveDatabaseName + "." + syncConfig.syncHive.hiveTableName
     val columns: List[String] = syncConfig.syncSpark.columns.trim.split(",").toList
     var colList: List[String] = List()
     colList = columns :+ "op" :+ "ts"

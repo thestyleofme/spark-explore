@@ -1,24 +1,36 @@
 {
   "syncSpark": {
-    "sparkAppName": "userinfo_spark_sync",
-    "columns": "id, username, password, age, sex, address",
-    "interval": 30,
-    "hiveDatabaseName": "test",
-    "hiveTableName": "userinfo_parquet",
-    "writeType": "hive"
+    "sparkAppName": "dev_test_demo0210",
+    "columns": "id,name",
+    "interval": 10,
+    "writeType": "jdbc"
   },
   "syncHive": {
-    "metastoreUris": "thrift://hdsp001:9083"
+    "metastoreUris": "thrift://hdsp001:9083",
+    "hiveDatabaseName": "test",
+    "hiveTableName": "dev_test_demo0210",
+    "writeHdfsPath": ""
   },
   "syncKafka": {
     "kafkaBootstrapServers": "hdsp001:6667,hdsp002:6667,hdsp003:6667",
-    "kafkaTopic": "server1.hdsp_test.userinfo_text",
-    "initDefaultOffset": "earliest"
+    "kafkaTopic": "server287.hdsp_test.dev_test_demo_0210",
+    "initDefaultOffset": "latest"
   },
   "syncRedis": {
     "redisHost": "hdsp004",
     "redisPort": 6379,
     "redisPassword": "hdsp_dev",
     "redisDataBase": 0
+  },
+  "syncJdbc": {
+    "dbType": "MYSQL",
+    "pk": "id",
+    "saveMode": "upsert",
+    "driver": "com.mysql.jdbc.Driver",
+    "jdbcUrl": "jdbc:mysql://dev.hdsp.hand.com:7233/hdsp_test?useUnicode=true&characterEncoding=utf-8&useSSL=false",
+    "user": "hdsp_dev",
+    "pwd": "hdsp_dev",
+    "schema": "hdsp_test",
+    "table": "dev_test_demo_0210_copy"
   }
 }
