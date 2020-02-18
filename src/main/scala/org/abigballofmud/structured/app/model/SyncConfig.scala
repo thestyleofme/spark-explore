@@ -11,24 +11,44 @@ import redis.clients.jedis.Protocol
  * @since 1.0
  */
 case class SyncConfig(syncSpark: SyncSpark,
-                      syncHive: SyncHive,
+                      syncColumns: java.util.List[SyncColumn],
+                      syncFile: SyncFile,
                       syncKafka: SyncKafka,
                       syncRedis: SyncRedis,
                       syncJdbc: SyncJdbc
                      ) extends Serializable
 
 /**
- * 同步到hive的信息
+ * 要同步的字段
  *
- * @param metastoreUris    hive metastoreUris
- * @param hiveDatabaseName 写入hive的库
- * @param hiveTableName    写入hive的表
- * @param writeHdfsPath    写入hdfs的路径
+ * @param colIndex 字段索引，指该字段在表中的顺序
+ * @param typeName 字段类型，取值有，number,string,date
+ * @param colName  字段名称
  */
-case class SyncHive(metastoreUris: String,
+case class SyncColumn(colIndex: Int,
+                      typeName: String,
+                      colName: String) extends Serializable
+
+/**
+ * 写文件，如果写hdfs文件到hive表目录即同步数据到hive
+ *
+ * @param metastoreUris      若写入hive metastoreUris
+ * @param hiveDatabaseName   hive库
+ * @param hiveTableName      hive表
+ * @param format             写入文件类型，如csv, orc, json, parquet, etc.
+ * @param writePath          写入文件的路径
+ * @param writeMode          写入模式，一般是append
+ * @param partitionBy        分区字段，逗号分割
+ * @param checkpointLocation checkpoint存放路径
+ */
+case class SyncFile(metastoreUris: String,
                     hiveDatabaseName: String,
                     hiveTableName: String,
-                    writeHdfsPath: String) extends Serializable
+                    format: String,
+                    writePath: String,
+                    writeMode: String,
+                    partitionBy: String,
+                    checkpointLocation: String) extends Serializable
 
 /**
  * kafka信息
@@ -58,13 +78,11 @@ case class SyncRedis(redisHost: String,
  * spark实时同步配置
  *
  * @param sparkAppName appName
- * @param columns      待同步的字段，分号分割，字段之间不要有空，示例 id,name,age,sex
  * @param interval     spark采集周期
  * @param writeType    写入类型
  *
  */
 case class SyncSpark(sparkAppName: String,
-                     columns: String,
                      interval: Int,
                      writeType: String) extends Serializable
 

@@ -16,9 +16,8 @@ import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 //noinspection DuplicatedCode
 object JdbcForeachBatchWriter {
 
-  def handle(syncConfig: SyncConfig, batchDF: DataFrame, batchId: Long, spark: SparkSession): Unit = {
+  def handle(syncConfig: SyncConfig, batchDF: DataFrame, batchId: Long, spark: SparkSession, columns: List[String]): Unit = {
     import spark.implicits._
-    val columns: List[String] = syncConfig.syncSpark.columns.trim.split(",").toList
     var colList: List[String] = List()
     colList = columns :+ "op"
     batchDF.persist()
@@ -27,7 +26,7 @@ object JdbcForeachBatchWriter {
     val df: DataFrame = batchDF.toDF().selectExpr(colList: _*)
     if (df.count() > 0) {
       // 同步到jdbc类型数据库中
-      JdbcUtil.saveDFtoDBCreateTableIfNotExist(syncConfig, df)
+      JdbcUtil.saveDFtoDBCreateTableIfNotExist(syncConfig, df, columns)
     }
     // 记录topic消费信息
     CommonUtil.recordTopicOffset(topicInfo, syncConfig.syncSpark.sparkAppName)

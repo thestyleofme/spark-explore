@@ -44,6 +44,12 @@ object CommonUtil {
     partitionOffset
   }
 
+  /**
+   * 记录kafka消费信息
+   *
+   * @param topicInfo Dataset[TopicInfo]
+   * @param appName   spark appName
+   */
   def recordTopicOffset(topicInfo: Dataset[TopicInfo], appName: String): Unit = {
     val jedis: Jedis = InternalRedisClient.getResource
     val pipeline: Pipeline = jedis.pipelined()

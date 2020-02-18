@@ -10,8 +10,8 @@ package org.abigballofmud.structured.app.constants;
  */
 public interface WriterTypeConstant {
 
+    String FILE = "file";
     String HIVE = "hive";
-    String HDFS = "hdfs";
     String JDBC = "jdbc";
 
 }

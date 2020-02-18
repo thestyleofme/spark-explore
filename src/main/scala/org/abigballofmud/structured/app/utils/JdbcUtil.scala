@@ -1,12 +1,13 @@
 package org.abigballofmud.structured.app.utils
 
 import java.sql.{Connection, DatabaseMetaData, Date, PreparedStatement, ResultSet, Statement, Timestamp}
+import java.time.format.DateTimeFormatter
+import java.time.{Instant, LocalDateTime, ZoneId}
 import java.util.Properties
 
 import com.typesafe.scalalogging.Logger
-import org.abigballofmud.common.CommonUtil
-import org.abigballofmud.structured.app.model.{SyncConfig, SyncJdbc, SyncSpark}
-import org.apache.spark.SparkConf
+import org.abigballofmud.structured.app.constants.ColTypeConstant
+import org.abigballofmud.structured.app.model.{SyncConfig, SyncJdbc}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.slf4j.LoggerFactory
@@ -30,8 +31,7 @@ object JdbcUtil {
    * @param syncConfig      SyncConfig
    * @param resultDateFrame DataFrame
    */
-  def saveDFtoDBUsePool(syncConfig: SyncConfig, resultDateFrame: DataFrame) {
-    val cols: List[String] = syncConfig.syncSpark.columns.trim.split(",").toList
+  def saveDFtoDBUsePool(syncConfig: SyncConfig, resultDateFrame: DataFrame, cols: List[String]) {
     val columnDataTypes: Array[DataType] = resultDateFrame.schema.fields.map(_.dataType)
     val sql: String = getReplaceSql(syncConfig.syncJdbc.schema, syncConfig.syncJdbc.table, cols)
     resultDateFrame.foreachPartition(partitionRecords => {
@@ -68,7 +68,20 @@ object JdbcUtil {
                   case _: BooleanType => preparedStatement.setBoolean(i, record.getAs[Boolean](index))
                   case _: FloatType => preparedStatement.setFloat(i, record.getAs[Float](index))
                   case _: DoubleType => preparedStatement.setDouble(i, record.getAs[Double](index))
-                  case _: StringType => preparedStatement.setString(i, record.getAs[String](index))
+                  //                  case _: StringType => preparedStatement.setString(i, record.getAs[String](index))
+                  case _: StringType =>
+                    // 由于df全部是string 这里根据字段类型转一下
+                    val colType: String = syncConfig.syncColumns.get(index).typeName
+                    if (colType.equalsIgnoreCase(ColTypeConstant.NUMBER)) {
+                      preparedStatement.setLong(i, java.lang.Long.valueOf(record.getAs[String](index)))
+                    } else if (colType.equalsIgnoreCase(ColTypeConstant.DATE)) {
+                      val dataStr: String = LocalDateTime.ofInstant(
+                        Instant.ofEpochMilli(java.lang.Long.valueOf(record.getAs[String](index))), ZoneId.of("GMT"))
+                        .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:dd"))
+                      preparedStatement.setString(i, dataStr)
+                    } else {
+                      preparedStatement.setString(i, record.getAs[String](index))
+                    }
                   case _: TimestampType => preparedStatement.setTimestamp(i, record.getAs[Timestamp](index))
                   case _: DateType => preparedStatement.setDate(i, record.getAs[Date](index))
                   case _ => throw new RuntimeException(s"nonsupport $dateType !!!")
@@ -92,6 +105,13 @@ object JdbcUtil {
         conn.close()
       }
     })
+  }
+
+  def getMetaData(syncConfig: SyncConfig): ResultSet = {
+    // 从连接池中获取一个连接
+    val conn: Connection = HikariManager.getDbManager(syncConfig.syncJdbc).getConnection
+    // 通过连接获取表名对应数据表的元数据
+    conn.getMetaData.getColumns(null, "%", syncConfig.syncJdbc.schema + "." ++ syncConfig.syncJdbc.table, "%")
   }
 
   /**
@@ -256,40 +276,15 @@ object JdbcUtil {
    *
    * @param syncConfig      SyncConfig
    * @param resultDateFrame DataFrame
+   * @param cols            写入字段列表
    */
-  def saveDFtoDBCreateTableIfNotExist(syncConfig: SyncConfig, resultDateFrame: DataFrame) {
+  def saveDFtoDBCreateTableIfNotExist(syncConfig: SyncConfig, resultDateFrame: DataFrame, cols: List[String]) {
     // 如果没有表，根据DataFrame建表
     createTableIfNotExist(syncConfig.syncJdbc, resultDateFrame)
     // 验证数据表字段和DataFrame字段个数和名称，顺序是否一致
     verifyFieldConsistency(syncConfig.syncJdbc, resultDateFrame)
     // 保存df
-    saveDFtoDBUsePool(syncConfig, resultDateFrame)
-  }
-
-
-  def main(args: Array[String]): Unit = {
-    //===========拼sql
-    //    var cols: List[String] = List()
-    //    cols = cols :+ "ts" :+ "topic" :+ "partition" :+ "offset"
-    //    val sql: String = getReplaceSql("db", "test", cols)
-    //    println(sql)
-    //===========表数据转df
-    val conf: SparkConf = new SparkConf().setMaster("local[2]").setAppName("just_test")
-    val syncJdbc: SyncJdbc = SyncJdbc("MYSQL", "", "",
-      "com.mysql.jdbc.Driver",
-      "jdbc:mysql://dev.hdsp.hand.com:7233/hdsp_test?useUnicode=true&characterEncoding=utf-8&useSSL=false",
-      "hdsp_dev", "hdsp_dev", "hdsp_test", "dev_test_demo_0210")
-    val spark: SparkSession = CommonUtil.getOrCreateSparkSession(conf)
-    //    val df: DataFrame = getDFFromMysql(spark, syncJdbc, "id = 2")
-    val df: DataFrame = spark.read.csv("src/main/resources/user.csv").toDF("id", "name")
-    df.show()
-    //===========删除数据
-    //    println(deleteByCondition(syncJdbc, "id = 2"))
-    //===========删表
-    //    println(dropTable(syncJdbc))
-    //===========df写入表 注意 syncSpark不写pk
-    val syncConfig: SyncConfig = SyncConfig(SyncSpark("", "id,name", 10, "jdbc"), null, null, null, syncJdbc)
-    saveDFtoDBCreateTableIfNotExist(syncConfig, df)
+    saveDFtoDBUsePool(syncConfig, resultDateFrame, cols)
   }
 
 }

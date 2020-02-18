@@ -13,8 +13,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
         <!-- <scala_version>2.12.10</scala_version>-->
-        <spark.version>2.4.5</spark.version>
-<!--        <spark.version>2.3.2</spark.version>-->
+<!--        <spark.version>2.4.5</spark.version>-->
+        <spark.version>2.3.2</spark.version>
         <scala.version>2.11.12</scala.version>
         <scala.logging.version>3.9.2</scala.logging.version>
         <slf4j.version>1.7.25</slf4j.version>
@@ -44,12 +44,6 @@
             <groupId>redis.clients</groupId>
             <artifactId>jedis</artifactId>
             <version>3.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-core_2.11</artifactId>
-            <version>${spark.version}</version>
-            <!--            <scope>provided</scope>-->
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
@@ -141,11 +135,19 @@
                 <artifactId>log4j</artifactId>
                 <version>${log4j.version}</version>
             </dependency>
+            <!-- spark 2.3.2 指定此版本-->
+            <dependency>
+                <groupId>commons-codec</groupId>
+                <artifactId>commons-codec</artifactId>
+                <version>1.10</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
     <build>
-        <finalName>${project.artifactId}-${project.version}</finalName>
+<!--        <finalName>${project.artifactId}-${project.version}</finalName>-->
+        <!-- 不要修改此jar包名称，程序上引用 示例：spark-app-1.1.3-SNAPSHOT-jar-with-dependencies.jar-->
+        <finalName>spark-app-${project.version}</finalName>
         <plugins>
             <!-- This plugin compiles Java files -->
             <plugin>

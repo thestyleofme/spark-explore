@@ -2,7 +2,7 @@
   "syncSpark": {
     "sparkAppName": "dev_test_demo0210",
     "interval": 10,
-    "writeType": "jdbc"
+    "writeType": "file"
   },
   "syncColumns": [
     {
@@ -14,18 +14,16 @@
       "colIndex": 2,
       "typeName": "string",
       "colName": "name"
-    },
-    {
-      "colIndex": 3,
-      "typeName": "date",
-      "colName": "create_date"
     }
   ],
   "syncFile": {
     "metastoreUris": "thrift://hdsp001:9083",
     "hiveDatabaseName": "test",
     "hiveTableName": "dev_test_demo0210",
-    "writePath": ""
+    "format": "csv",
+    "writeMode": "append",
+    "writePath": "hdfs://hdsp001:8020/warehouse/tablespace/managed/hive/test.db/dev_test_demo0210",
+    "checkpointLocation": "check/path04"
   },
   "syncKafka": {
     "kafkaBootstrapServers": "hdsp001:6667,hdsp002:6667,hdsp003:6667",
