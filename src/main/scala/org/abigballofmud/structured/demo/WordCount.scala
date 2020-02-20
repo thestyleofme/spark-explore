@@ -1,4 +1,4 @@
-package org.abigballofmud.structured
+package org.abigballofmud.structured.demo
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.streaming.StreamingQuery

@@ -1,4 +1,4 @@
-package org.abigballofmud.structured.app
+package org.abigballofmud.structured.sink
 
 import java.util.concurrent.TimeUnit
 
@@ -8,40 +8,27 @@ import org.abigballofmud.common.CommonUtil
 import org.abigballofmud.redis.InternalRedisClient
 import org.abigballofmud.structured.app.constants.WriterTypeConstant
 import org.abigballofmud.structured.app.model.SyncConfig
-import org.abigballofmud.structured.app.utils.JdbcUtil
-import org.abigballofmud.structured.app.writer.{HiveForeachBatchWriter, JdbcForeachBatchWriter}
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
-import org.apache.spark.sql.streaming.Trigger
+import org.apache.spark.sql.streaming.{OutputMode, Trigger}
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.slf4j.LoggerFactory
-import redis.clients.jedis.{Jedis, Pipeline}
-
-import scala.collection.mutable
 
 /**
  * <p>
- * 运行示例:
- * nohup /usr/hdp/3.1.0.0-78/spark2/bin/spark-submit \
- * --class org.abigballofmud.structured.SyncApp \
- * --master yarn
- * --deploy-mode client \
- * /data/spark-apps/spark-app-1.1.3-SNAPSHOT.jar 'file' '/data/spark_config_file/userinfo_spark_sync.json' \
- * > /data/spark-apps/spark-sync.log 2>&1 &
+ * description
  * </p>
  *
- * @author abigballofmud 2019/11/04 15:33
+ * @author isacc 2020/02/18 17:48
  * @since 1.0
  */
 //noinspection DuplicatedCode
-object SyncApp {
+object JdbcSinkDemo {
 
-  private val log = Logger(LoggerFactory.getLogger(SyncApp.getClass))
+  private val log = Logger(LoggerFactory.getLogger(JdbcSinkDemo.getClass))
   private val gson = new Gson()
 
   def main(args: Array[String]): Unit = {
-
     if (args.length != 2) {
       throw new IllegalArgumentException("Need two args! one: the config json type[file/hdfs], two: the config json path")
     }
@@ -68,7 +55,7 @@ object SyncApp {
     tempSc.stop()
 
     val conf: SparkConf = new SparkConf()
-      .setMaster("local[*]")
+      .setMaster("local[2]")
       .setAppName(syncConfig.syncSpark.sparkAppName)
 
     if (WriterTypeConstant.HIVE.equalsIgnoreCase(syncConfig.syncSpark.writeType)) {
@@ -127,83 +114,14 @@ object SyncApp {
       columns = columns :+ syncConfig.syncColumns.get(i).colName
     }
     val ds: Dataset[Row] = buildSchema(spark, df, columns)
-
-    var colList: List[String] = List()
-    if (syncConfig.syncSpark.writeType.equalsIgnoreCase(WriterTypeConstant.FILE)) {
-      doFileWrite(ds, syncConfig)
-    } else {
-      // 其他写操作暂时使用foreach
-      ds.repartition(1).writeStream
-        .trigger(Trigger.ProcessingTime(syncConfig.syncSpark.interval, TimeUnit.SECONDS))
-        .foreach(writer = new ForeachWriter[Row] {
-          var pipeline: Pipeline = _
-          var jedis: Jedis = _
-
-          override def open(partitionId: Long, version: Long): Boolean = {
-            jedis = InternalRedisClient.getResource
-            pipeline = jedis.pipelined()
-            // 会阻塞redis
-            pipeline.multi()
-            // hive加上 op ts
-            if (syncConfig.syncSpark.writeType.equalsIgnoreCase(WriterTypeConstant.HIVE)) {
-              colList = columns :+ "op" :+ "ts"
-            } else if (syncConfig.syncSpark.writeType.equalsIgnoreCase(WriterTypeConstant.JDBC)) {
-              colList = columns :+ "op"
-            }
-            true
-          }
-
-          override def process(row: Row): Unit = {
-            val map: mutable.Map[String, String] = scala.collection.mutable.Map[String, String]()
-            map += ("appName" -> syncConfig.syncSpark.sparkAppName)
-            for (i <- row.schema.fields.indices) {
-              map += (row.schema.fields.apply(i).name -> row.getString(i))
-            }
-            val spark: SparkSession = CommonUtil.getOrCreateSparkSession(conf)
-            val rowRDD: RDD[Row] = spark.sparkContext.makeRDD(Seq(row))
-            val data: DataFrame = spark.createDataFrame(rowRDD, row.schema).selectExpr(colList: _*)
-            // here will throw NPE if work at spark2.4.x
-            if (data.count() > 0) {
-              // 写到不同端
-              doWrite(data, syncConfig, columns)
-            }
-            // 记录offset
-            pipeline.set(map("topic") + ":" + map("appName"), "{\"%s\":%s}".format(map("partition"), map("offset").toInt + 1))
-          }
-
-          override def close(errorOrNull: Throwable): Unit = {
-            // 执行，释放
-            pipeline.exec()
-            pipeline.sync()
-            pipeline.close()
-            InternalRedisClient.recycleResource(jedis)
-          }
-        })
-        // spark 2.4.x 后支持
-        //      .foreachBatch { (batchDF: DataFrame, batchId: Long) =>
-        //        handler(syncConfig, batchDF, batchId, spark, columns)
-        //      }
-        .start().awaitTermination()
-    }
-
-  }
-
-  /**
-   * 写文件，也可写到hive表
-   *
-   * @param ds         Dataset[Row]
-   * @param syncConfig syncConfig
-   */
-  def doFileWrite(ds: Dataset[Row], syncConfig: SyncConfig): Unit = {
-    ds.repartition(1).writeStream
+    ds.writeStream
       .trigger(Trigger.ProcessingTime(syncConfig.syncSpark.interval, TimeUnit.SECONDS))
-      .format(syncConfig.syncFile.format)
-      .outputMode(syncConfig.syncFile.writeMode)
-      //      后续支持
-      //      .partitionBy(syncConfig.syncFile.partitionBy)
-      .option("checkpointLocation", syncConfig.syncFile.checkpointLocation)
-      .option("path", syncConfig.syncFile.writePath)
-      .start().awaitTermination()
+      .format("myJdbc")
+      .outputMode(OutputMode.Append())
+      .option("checkpointLocation", "check/path05")
+      .option("syncConfig", gson.toJson(syncConfig))
+      .start()
+      .awaitTermination()
   }
 
   /**
@@ -256,42 +174,4 @@ object SyncApp {
     val ds: Dataset[Row] = df_c_u.union(df_d)
     ds
   }
-
-  /**
-   * Spark2.3执行写操作
-   *
-   * @param df         DataFrame
-   * @param syncConfig SyncConfig
-   */
-  def doWrite(df: DataFrame, syncConfig: SyncConfig, columns: List[String]): Unit = {
-    val writeType: String = syncConfig.syncSpark.writeType
-    if (WriterTypeConstant.HIVE.equalsIgnoreCase(writeType)) {
-      val hiveTableName: String = syncConfig.syncFile.hiveDatabaseName + "." + syncConfig.syncFile.hiveTableName
-      df.write.mode(SaveMode.Append).format("hive").saveAsTable(hiveTableName)
-    } else if (WriterTypeConstant.JDBC.equalsIgnoreCase(writeType)) {
-      JdbcUtil.saveDFtoDBCreateTableIfNotExist(syncConfig, df, columns)
-    } else {
-      throw new IllegalArgumentException("invalid writeType")
-    }
-  }
-
-  /**
-   * spark 2.4执行写操作
-   */
-  val handler: (SyncConfig, DataFrame, Long, SparkSession, List[String]) =>
-    Unit = (syncConfig: SyncConfig,
-            batchDF: DataFrame,
-            batchId: Long,
-            spark: SparkSession,
-            columns: List[String]) => {
-    val writeType: String = syncConfig.syncSpark.writeType
-    if (WriterTypeConstant.HIVE.equalsIgnoreCase(writeType)) {
-      HiveForeachBatchWriter.handle(syncConfig, batchDF, batchId, spark, columns)
-    } else if (WriterTypeConstant.JDBC.equalsIgnoreCase(writeType)) {
-      JdbcForeachBatchWriter.handle(syncConfig, batchDF, batchId, spark, columns)
-    } else {
-      throw new IllegalArgumentException("invalid writeType")
-    }
-  }
-
 }

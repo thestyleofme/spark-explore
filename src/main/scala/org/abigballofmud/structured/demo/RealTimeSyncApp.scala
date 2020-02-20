@@ -1,4 +1,4 @@
-package org.abigballofmud.structured
+package org.abigballofmud.structured.demo
 
 import java.util.concurrent.TimeUnit
 

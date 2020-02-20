@@ -13,4 +13,5 @@ public interface ColTypeConstant {
     String STRING = "STRING";
     String NUMBER = "NUMBER";
     String DATE = "DATE";
+    String DECIMAL = "DECIMAL";
 }
